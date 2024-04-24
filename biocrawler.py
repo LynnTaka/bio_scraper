@@ -17,6 +17,7 @@ class BioCrawler:
         client = pymongo.MongoClient(DB_HOST, DB_PORT)
         db = client[DB_NAME]
         self.pages = db.pages
+        self.faculty = db.faculty
 
     #function to check if the page is a professor page with the correct format
     def target_page(self, bs):
@@ -25,6 +26,14 @@ class BioCrawler:
     #function to store the page in the database
     def store_page(self, url, bs):
         self.pages.insert_one({'url': url, 'html': str(bs)})
+
+    #function to extract faculty information from the page
+    def get_faculty_info(self, bs):
+        fac_info = self.target_page(bs)
+        if fac_info:
+            faculty_name = fac_info.find('h1').text.strip()
+            return faculty_name
+        return None
 
     def crawlerThread(self, num_targets):
         #list of professor pages to be returned
@@ -41,8 +50,16 @@ class BioCrawler:
                 html = urlopen(url)
                 bs = BeautifulSoup(html, 'html.parser')
                 self.store_page(url, bs)
+                #check if the page is a faculty page and store faculty info if it is
                 if self.target_page(bs):
                     targets_found.append(url)
+                    faculty_name = self.get_faculty_info(bs)
+                    if faculty_name:
+                        self.faculty.insert_one({
+                            'name': faculty_name,
+                            'url': url,
+                            'html': str(bs),
+                        })
                     continue
                 #find all links on the page
                 for links in bs.find_all('a', href=True):
