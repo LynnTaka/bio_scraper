@@ -7,6 +7,7 @@ import pymongo
 
 class BioCrawler:
     def __init__(self, seedURL):
+        #Use deque for the frontier since popleft is faster than list pop(0)
         self.frontier = deque([seedURL])
         self.vis = set()
 
