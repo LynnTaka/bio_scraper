@@ -76,3 +76,59 @@ class BioCrawler:
                 continue
         #return the list of professor pages 
         return targets_found
+
+    def parse_homepage(self, url):
+        try:
+            html = urlopen(url)
+            bs = BeautifulSoup(html, 'html.parser')
+            # Initialize dictionary to store extracted information
+            faculty_info = {}
+            # Find all headers on the homepage
+            headers = bs.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+            # Extract information from sections under each header
+            for header in headers:
+                # Get the header title
+                header_title = header.get_text().strip()
+                # Initialize list to store content under the header
+                header_content = []
+                # Navigate to the next sibling of the header element
+                next_sibling = header.find_next_sibling()
+                # Loop through siblings until reaching the next header or end of document
+                while next_sibling and next_sibling.name not in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                    # If the sibling is a tag containing text, append its text to header_content
+                    if next_sibling.name == 'p':
+                        header_content.append(next_sibling.get_text().strip())
+                    elif next_sibling.name in ['ul', 'ol']:
+                        # If the sibling is an unordered or ordered list, extract list items' text
+                        list_items = next_sibling.find_all('li')
+                        for item in list_items:
+                            header_content.append(item.get_text().strip())
+                    # Move to the next sibling
+                    next_sibling = next_sibling.find_next_sibling()
+                # Join the list of text content into a single string
+                header_content = '\n'.join(header_content)
+                # Store header content in faculty_info dictionary if not empty
+                if header_content:
+                    faculty_info[header_title] = header_content
+            return faculty_info
+        except (HTTPError, URLError) as e:
+            print("Access failed:", url + " Error Type:", e)
+            return None
+        
+    def index_faculty_homepages(self):
+    # Get all documents from the faculty collection
+        faculty_pages = self.faculty.find({}, {'url': 1})
+        for page in faculty_pages:
+            homepage_url = page['url']
+            # Parse the homepage and extract relevant information
+            faculty_info = self.parse_homepage(homepage_url)
+            if faculty_info:
+                try:
+                    # Update the faculty document with the extracted information
+                    self.faculty.update_one({'url': homepage_url}, {'$set': faculty_info}, upsert=True)
+                    print(f"Homepage indexed: {homepage_url}")
+                except Exception as e:
+                    print(f"Failed to index homepage {homepage_url}. Error: {e}")
+    
+
+
