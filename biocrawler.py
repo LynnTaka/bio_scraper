@@ -83,40 +83,26 @@ class BioCrawler:
             bs = BeautifulSoup(html, 'html.parser')
             # Initialize dictionary to store extracted information
             faculty_info = {}
-            # Find all headers on the homepage
-            headers = bs.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
-            # Extract information from sections under each header
-            for header in headers:
-                # Get the header title
-                header_title = header.get_text().strip()
-                # Initialize list to store content under the header
-                header_content = []
-                # Navigate to the next sibling of the header element
-                next_sibling = header.find_next_sibling()
-                # Loop through siblings until reaching the next header or end of document
-                while next_sibling and next_sibling.name not in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
-                    # If the sibling is a tag containing text, append its text to header_content
-                    if next_sibling.name == 'p':
-                        header_content.append(next_sibling.get_text().strip())
-                    elif next_sibling.name in ['ul', 'ol']:
-                        # If the sibling is an unordered or ordered list, extract list items' text
-                        list_items = next_sibling.find_all('li')
-                        for item in list_items:
-                            header_content.append(item.get_text().strip())
-                    # Move to the next sibling
-                    next_sibling = next_sibling.find_next_sibling()
-                # Join the list of text content into a single string
-                header_content = '\n'.join(header_content)
-                # Store header content in faculty_info dictionary if not empty
-                if header_content:
-                    faculty_info[header_title] = header_content
+            # Extract content from the 'div.fac-info' section
+            fac_info = bs.find('div', {'class': 'fac-info'})
+            if fac_info:
+                faculty_info['fac_info'] = fac_info.get_text(separator='\n').strip()
+            # Extract content from the 'div.fac-staff' section
+            fac_staff = bs.find('div', {'class': 'fac-staff'})
+            if fac_staff:
+                faculty_info['fac_staff'] = fac_staff.get_text(separator='\n').strip()
+            # Extract content from the 'div.accolades' section
+            accolades = bs.find('div', {'class': 'accolades'})
+            if accolades:
+                faculty_info['accolades'] = accolades.get_text(separator='\n').strip()
             return faculty_info
         except (HTTPError, URLError) as e:
             print("Access failed:", url + " Error Type:", e)
             return None
+
         
     def index_faculty_homepages(self):
-    # Get all documents from the faculty collection
+        # Get all documents from the faculty collection
         faculty_pages = self.faculty.find({}, {'url': 1})
         for page in faculty_pages:
             homepage_url = page['url']
@@ -124,11 +110,13 @@ class BioCrawler:
             faculty_info = self.parse_homepage(homepage_url)
             if faculty_info:
                 try:
+                    # Check if any of the sections are missing and skip updating if so
+                    if 'fac_info' not in faculty_info or 'fac_staff' not in faculty_info or 'accolades' not in faculty_info:
+                        print(f"Skipping indexing for {homepage_url}: Missing sections")
+                        continue
                     # Update the faculty document with the extracted information
                     self.faculty.update_one({'url': homepage_url}, {'$set': faculty_info}, upsert=True)
                     print(f"Homepage indexed: {homepage_url}")
                 except Exception as e:
                     print(f"Failed to index homepage {homepage_url}. Error: {e}")
-    
-
 
