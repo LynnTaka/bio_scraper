@@ -5,22 +5,16 @@ from collections import deque
 from bs4 import BeautifulSoup
 import pymongo
 import re
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-from nltk.stem import PorterStemmer
 
-nltk.download('punkt')
-nltk.download('stopwords')
+from sklearn.feature_extraction.text import CountVectorizer
+
 
 class BioCrawler:
     def __init__(self, seedURL):
         #Use deque for the frontier since popleft is faster than list pop(0)
         self.frontier = deque([seedURL])
         self.vis = set()
-        # define the NLTK stopwords to be used, and the PorterStemmer for word stemming
-        self.stopwords = set(stopwords.words('english'))
-        self.stemmer = PorterStemmer()
+
 
     def connectDB(self):
         DB_NAME = 'CPPBIO'
@@ -133,31 +127,20 @@ class BioCrawler:
                     print(f"Failed to index homepage {homepage_url}. Error: {e}")
 
 
+
     def process_text(self):
-        # iterate through all documents in the faculty collection
-        for page in self.faculty.find({}):
-            # get text from the three attributes
-            all_text = page.get('fac_info', '') + ' ' + page.get('fac_staff', '') + ' ' + page.get('accolades', '')
+        vectorizer = CountVectorizer(stop_words = 'english')
+        faculty = self.faculty.find({})
 
-            # split the text by whitespace to get words for tokens
-            words = all_text.split()
-
-            # use the split words as tokens
-            tokens = []
-            for word in words:
-                # remove symbols and punctuation, but keep '@' for emails to get token
-                if '@' in word:
-                    tokens.append(word)
-                else:
-                    token = re.sub(r'[^\w\d@-]', '', word)
-                    tokens.extend(word_tokenize(token))
-
-            # use NTLK library for stopping (remove stopwords)
-            tokens = [word for word in tokens if word.lower() not in self.stopwords]
-
-            # use PorterStemmer to stem the tokens
-            #tokens = [self.stemmer.stem(token) for token in tokens]
-
-            # store the tokens in a 'tokens' attribute within the same document
-            self.faculty.update_one({'_id': page['_id']}, {'$set': {'tokens': tokens}})
-
+        # iterate through every document within the faculty collection.
+        for prof in faculty:
+            # acquire all text from the attributes
+            text = prof.get('fac_info', '') + ' ' + prof.get('fac_staff', '') + ' ' + prof.get('accolades', '')
+            #tokenize the text
+            tokenized_text = vectorizer.fit_transform([text])
+            #get vocabulary
+            vocabulary = vectorizer.vocabulary_
+            #get tokens from vocabulary
+            tokens = list(vocabulary.keys())
+            #save tokens as 'tokens' attribute in the respective document
+            self.faculty.update_one({'_id': prof['_id']}, {'$set': {'tokens': tokens}})
