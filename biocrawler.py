@@ -4,12 +4,23 @@ from urllib.error import HTTPError, URLError
 from collections import deque
 from bs4 import BeautifulSoup
 import pymongo
+import re
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk.stem import PorterStemmer
+
+nltk.download('punkt')
+nltk.download('stopwords')
 
 class BioCrawler:
     def __init__(self, seedURL):
         #Use deque for the frontier since popleft is faster than list pop(0)
         self.frontier = deque([seedURL])
         self.vis = set()
+        # define the NLTK stopwords to be used, and the PorterStemmer for word stemming
+        self.stopwords = set(stopwords.words('english'))
+        self.stemmer = PorterStemmer()
 
     def connectDB(self):
         DB_NAME = 'CPPBIO'
@@ -23,7 +34,7 @@ class BioCrawler:
     #function to check if the page is a professor page with the correct format
     def target_page(self, bs):
         return bs.find('div', {'class': 'fac-info'})
-    
+
     #function to store the page in the database
     def store_page(self, url, bs):
         self.pages.insert_one({'url': url, 'html': str(bs)})
@@ -74,7 +85,7 @@ class BioCrawler:
             except (HTTPError, URLError) as e:
                 print("Access failed:", url + " Error Type:", e)
                 continue
-        #return the list of professor pages 
+        #return the list of professor pages
         return targets_found
 
     def parse_homepage(self, url):
@@ -95,12 +106,13 @@ class BioCrawler:
             accolades = bs.find('div', {'class': 'accolades'})
             if accolades:
                 faculty_info['accolades'] = accolades.get_text(separator='\n').strip()
+
             return faculty_info
         except (HTTPError, URLError) as e:
             print("Access failed:", url + " Error Type:", e)
             return None
 
-        
+
     def index_faculty_homepages(self):
         # Get all documents from the faculty collection
         faculty_pages = self.faculty.find({}, {'url': 1})
@@ -119,4 +131,33 @@ class BioCrawler:
                     print(f"Homepage indexed: {homepage_url}")
                 except Exception as e:
                     print(f"Failed to index homepage {homepage_url}. Error: {e}")
+
+
+    def process_text(self):
+        # iterate through all documents in the faculty collection
+        for page in self.faculty.find({}):
+            # get text from the three attributes
+            all_text = page.get('fac_info', '') + ' ' + page.get('fac_staff', '') + ' ' + page.get('accolades', '')
+
+            # split the text by whitespace to get words for tokens
+            words = all_text.split()
+
+            # use the split words as tokens
+            tokens = []
+            for word in words:
+                # remove symbols and punctuation, but keep '@' for emails to get token
+                if '@' in word:
+                    tokens.append(word)
+                else:
+                    token = re.sub(r'[^\w\d@-]', '', word)
+                    tokens.extend(word_tokenize(token))
+
+            # use NTLK library for stopping (remove stopwords)
+            tokens = [word for word in tokens if word.lower() not in self.stopwords]
+
+            # use PorterStemmer to stem the tokens
+            #tokens = [self.stemmer.stem(token) for token in tokens]
+
+            # store the tokens in a 'tokens' attribute within the same document
+            self.faculty.update_one({'_id': page['_id']}, {'$set': {'tokens': tokens}})
 
