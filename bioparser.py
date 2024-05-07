@@ -2,6 +2,9 @@ from bs4 import BeautifulSoup
 from urllib.request import urlopen
 from urllib.error import HTTPError, URLError
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfTransformer
+from sklearn.pipeline import Pipeline
+from nltk.stem import PorterStemmer
 import pymongo
 
 class BioParser:
@@ -15,6 +18,7 @@ class BioParser:
         db = client[DB_NAME]
         self.pages = db.pages
         self.faculty = db.faculty
+        self.inverted_index = db.inverted_index
 
     def query_database(self):
         """
@@ -81,21 +85,39 @@ class BioParser:
 
 
     def process_text(self):
-        vectorizer = CountVectorizer(stop_words = 'english')
-        faculty = self.faculty.find({})
+        # Define a stemmer function
+        stemmer = PorterStemmer()
+        def stem_tokens(tokens):
+            return [stemmer.stem(token) for token in tokens]
+
+        #tokenize the text using the stemmer function
+        def custom_tokenizer(text):
+            vectorizer = CountVectorizer(stop_words='english')
+            tokenized_text = vectorizer.build_tokenizer()(text)
+            return stem_tokens(tokenized_text)
+
+        # Create a pipeline for tokenization and tf-idf transformation
+        pipeline = Pipeline([
+            ('count', CountVectorizer(tokenizer=custom_tokenizer)),
+            ('tfidf', TfidfTransformer())
+        ])
 
         # iterate through every document within the faculty collection.
-        for prof in faculty:
-            # acquire all text from the attributes
-            text = prof.get('fac_info', '') + ' ' + prof.get('fac_staff', '') + ' ' + prof.get('accolades', '')
-            #tokenize the text
-            tokenized_text = vectorizer.fit_transform([text])
-            #get vocabulary
-            vocabulary = vectorizer.vocabulary_
-            #get tokens from vocabulary
-            tokens = list(vocabulary.keys())
-            #save tokens as 'tokens' attribute in the respective document
-            self.faculty.update_one({'_id': prof['_id']}, {'$set': {'tokens': tokens}})
+        faculty_text = [f.get('fac_info', '') + ' ' + f.get('fac_staff', '') + ' ' + f.get('accolades', '') 
+                        for f in self.faculty.find()]
 
+        # Fit the pipeline to the text data
+        tfidf_matrix = pipeline.fit_transform(faculty_text)
 
+        #get vocabulary (terms) and their corresponding tf-idf weights
+        vocabulary = pipeline.named_steps['count'].get_feature_names_out()
+        tfidf_weights = tfidf_matrix.toarray()
 
+        # Create the inverted index
+        inverted_index = {}
+        for term, weights in zip(vocabulary, tfidf_weights.T):
+            inverted_index[term] = [{'url': page['url'], 'weight': weight} 
+                                    for page, weight in zip(self.faculty.find({}, {'url': 1}), weights)]
+
+        # Insert the inverted index into the database collection
+        self.inverted_index.insert_one({'index': inverted_index})

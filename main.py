@@ -9,7 +9,7 @@ if __name__ == '__main__':
     targets_found = crawler.crawlerThread(num_targets=10)
     print(targets_found)
 
-    #Parser portion
+    #Parser and index portion
     parser = BioParser()
     parser.connectDB()
     parser.index_faculty_homepages()
