@@ -3,6 +3,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from nltk.stem import PorterStemmer
 import pymongo
+from bs4 import BeautifulSoup
+
 
 def calculate_similarity(query_vector, faculty_vectors):
     # calc cosine sim btw query and faculty vectors
@@ -19,19 +21,39 @@ def get_top_five_most_similar(sim_scores, faculty_pages):
 
     return top_five
 
+def get_headers_from_hml(html_content):
+    # initialize bs
+    soup = BeautifulSoup(html_content, 'html.parser')
+    # find header tag the acts as a peek
+    header = soup.find(['h1', 'h2', 'h3', 'h4'])
+    if header:
+        return header.get_text().strip()
+    else:
+        return None
+
+
+# def load():
+#     DB_NAME = 'CPPBIO'
+#     DB_HOST = 'localhost'
+#     DB_PORT = 27017
+#     client = pymongo.MongoClient(DB_HOST, DB_PORT)
+#     db = client[DB_NAME]
+#     doc = db.inverted_index.find_one()
+#     inverted_index = doc.get('index', {})
+#
+#     return inverted_index
+
+
 def load():
     DB_NAME = 'CPPBIO'
     DB_HOST = 'localhost'
     DB_PORT = 27017
     client = pymongo.MongoClient(DB_HOST, DB_PORT)
     db = client[DB_NAME]
-    doc = db.inverted_index.find_one()
-    inverted_index = doc.get('index', {})
-    
-    return inverted_index
 
+    return db
 
-def search(input, inverted_index):
+def search(input, db):
     # Define a stemmer function
     stemmer = PorterStemmer()
     def stem_tokens(tokens):
@@ -57,6 +79,8 @@ def search(input, inverted_index):
     tfidf_table = {}
     size = len(vocabulary)
 
+    doc = db.inverted_index.find_one()
+    inverted_index = doc.get('index', {})
 
     for pos, term in enumerate(vocabulary):
         refs = inverted_index.get(term)
@@ -81,11 +105,19 @@ def search(input, inverted_index):
 
     score = calculate_similarity(query_matrix, tfidf_matrix)
     top_five = get_top_five_most_similar(score, profs)
-    for i in top_five:
-        print(i[1])
+
+    if top_five:
+        for i, url in enumerate(top_five):
+            print(f'{i+1}.')
+            doc = db.pages.find_one({'url': url[1]})
+            if doc:
+                html_content = doc['html']
+                header = get_headers_from_hml(html_content)
+                if header:
+                    print(f'Header: {header}')
+            print(f'URL: {url[1]}')
+            print()
+    else:
+        print('NO RESULTS FOUND')
+        print()
     pass
-
-
-index = load()
-query = "summer research"
-search(query, index)
