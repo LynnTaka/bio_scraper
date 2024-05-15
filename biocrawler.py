@@ -1,3 +1,4 @@
+from sklearn.feature_extraction.text import CountVectorizer
 from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 from urllib.error import HTTPError, URLError
@@ -6,15 +7,11 @@ from bs4 import BeautifulSoup
 import pymongo
 import re
 
-from sklearn.feature_extraction.text import CountVectorizer
-
-
 class BioCrawler:
     def __init__(self, seedURL):
         #Use deque for the frontier since popleft is faster than list pop(0)
         self.frontier = deque([seedURL])
         self.vis = set()
-
 
     def connectDB(self):
         DB_NAME = 'CPPBIO'
@@ -81,4 +78,3 @@ class BioCrawler:
                 continue
         #return the list of professor pages
         return targets_found
-
